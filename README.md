@@ -8,6 +8,14 @@ This module extends the default MQTT_Device of FHEM, to make the integration of 
 
 But: This module is still under development. Please report any issues.
 
+## Installation
+
+```
+update add https://raw.githubusercontent.com/klein0r/fhem-tasmota/master/controls_tasmota.txt
+update check tasmota
+update all tasmota
+```
+
 ## License
 
 MIT License
