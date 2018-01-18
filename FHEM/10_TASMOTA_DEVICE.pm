@@ -15,8 +15,10 @@ my %gets = (
 
 my %sets = (
     "cmd" => "",
-    "power" => ":on,off,toggle",
-    "status" => ":noArg"
+    "Power" => ":on,off,toggle",
+    "Upgrade" => ":1",
+    "Status" => ":noArg",
+    "OtaUrl" => ""
 );
 
 my @topics = qw(
@@ -184,6 +186,14 @@ sub Set($$$@) {
         }
 
         $hash->{message_ids}->{$msgid}++ if defined $msgid;
+
+        # Refresh Status
+
+        my $statusTopic = TASMOTA::DEVICE::GetTopicFor($hash, "cmnd/Status");
+        $msgid = send_publish($hash->{IODev}, topic => $statusTopic, message => "0", qos => $qos, retain => $retain);
+        $hash->{message_ids}->{$msgid}++ if defined $msgid;
+
+        Log3($hash->{NAME}, 5, "sent (cmnd) '0' to " . $statusTopic);
     } else {
         return MQTT::DEVICE::Set($hash, $name, $command, @values);
     }
