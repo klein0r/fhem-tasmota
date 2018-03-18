@@ -46,9 +46,7 @@ my @topics = qw(
     tele/SENSOR
     tele/STATE
     tele/UPTIME
-    stat/ERGEBNIS
-    tele/LAUFZEIT
-    tele/ENERGIE
+    tele/RESULT
 );
 
 sub TASMOTA_DEVICE_Initialize($) {
@@ -105,12 +103,13 @@ sub Define() {
     if (defined($topic)) {
 
         $hash->{TOPIC} = $topic;
-        $hash->{MODULE_VERSION} = "0.2";
+        $hash->{MODULE_VERSION} = "0.3";
 
         if (defined($fullTopic) && $fullTopic ne "") {
             $fullTopic =~ s/%topic%/$topic/;
             $hash->{FULL_TOPIC} = $fullTopic;
         } else {
+            # Default Sonoff/Tasmota topic
             $hash->{FULL_TOPIC} = "%prefix%/" . $topic . "/";
         }
 
@@ -134,7 +133,7 @@ sub Define() {
 
 sub GetTopicFor($$) {
     my ($hash, $prefix) = @_;
-    
+
     my $tempTopic = $hash->{FULL_TOPIC};
     $tempTopic =~ s/%prefix%/$prefix/;
 
