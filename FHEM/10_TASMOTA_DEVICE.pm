@@ -15,10 +15,16 @@ my %gets = (
 
 my %sets = (
     "cmd" => "",
+    "on" => ":noArg",
+    "off" => ":noArg",
+    "toggle" => ":noArg",
+
     "Power" => ":on,off,toggle",
     "Upgrade" => ":1",
     "Status" => ":noArg",
-    "OtaUrl" => ""
+    "OtaUrl" => "",
+
+    "Clear" => ":noArg"
 );
 
 my @topics = qw(
@@ -71,6 +77,7 @@ use warnings;
 use POSIX;
 use SetExtensions;
 use GPUtils qw(:all);
+use JSON;
 
 use Net::MQTT::Constants;
 
@@ -103,7 +110,7 @@ sub Define() {
     if (defined($topic)) {
 
         $hash->{TOPIC} = $topic;
-        $hash->{MODULE_VERSION} = "0.3";
+        $hash->{MODULE_VERSION} = "0.4";
 
         if (defined($fullTopic) && $fullTopic ne "") {
             $fullTopic =~ s/%topic%/$topic/;
@@ -157,9 +164,9 @@ sub Set($$$@) {
     my ($hash, $name, $command, @values) = @_;
 
     if ($command eq '?') {
-        return "Unknown argument " . $command . ", choose one of " . join(" ", map { "$_$sets{$_}" } keys %sets) . " " . join(" ", map {$hash->{sets}->{$_} eq "" ? $_ : "$_:".$hash->{sets}->{$_}} sort keys %{$hash->{sets}});
+        return "Unknown argument " . $command . ", choose one of " . join(" ", map { "$_$sets{$_}" } sort keys %sets) . " " . join(" ", map {$hash->{sets}->{$_} eq "" ? $_ : "$_:" . $hash->{sets}->{$_}} sort keys %{$hash->{sets}});
     }
-    
+
     Log3($hash->{NAME}, 5, "set " . $command . " - value: " . join (" ", @values));
 
     if (defined($sets{$command})) {
@@ -175,6 +182,18 @@ sub Set($$$@) {
             $msgid = send_publish($hash->{IODev}, topic => $topic, message => $value, qos => $qos, retain => $retain);
 
             Log3($hash->{NAME}, 5, "sent (cmnd) '" . $value . "' to " . $topic);
+        } elsif ($command =~ m/^(on|off|toggle)$/s) {
+            my $topic = TASMOTA::DEVICE::GetTopicFor($hash, "cmnd/Power");
+            my $value = $1;
+
+            $msgid = send_publish($hash->{IODev}, topic => $topic, message => $value, qos => $qos, retain => $retain);
+
+            Log3($hash->{NAME}, 5, "sent (on, off, toggle) '" . $value . "' to " . $topic);
+            
+        } elsif ($command eq "Clear") {
+            fhem("deletereading $name .*");
+
+            Log3($hash->{NAME}, 5, "cleared all values");
         } else {
             my $topic = TASMOTA::DEVICE::GetTopicFor($hash, "cmnd/" . $command);
             my $value = join (" ", @values);
@@ -239,7 +258,7 @@ sub Decode($$$) {
     my $h;
 
     eval {
-        $h = JSON::decode_json($value);
+        $h = decode_json($value);
         1;
     };
 
