@@ -62,7 +62,7 @@ sub TASMOTA_DEVICE_Initialize($) {
     $hash->{DefFn} = "TASMOTA::DEVICE::Define";
     $hash->{UndefFn} = "TASMOTA::DEVICE::Undefine";
     $hash->{SetFn} = "TASMOTA::DEVICE::Set";
-    $hash->{AttrFn} = "MQTT::DEVICE::Attr";
+    $hash->{AttrFn} = "TASMOTA::DEVICE::Attr";
     $hash->{AttrList} = "IODev qos retain publishSet publishSet_.* subscribeReading_.* autoSubscribeReadings " . $main::readingFnAttributes;
     $hash->{OnMessageFn} = "TASMOTA::DEVICE::onmessage";
 
@@ -92,6 +92,8 @@ BEGIN {
         readingsBeginUpdate
         readingsEndUpdate
         Log3
+        SetExtensions
+        SetExtensionsCancel
         fhem
         defs
         AttrVal
@@ -111,6 +113,7 @@ sub Define() {
 
         $hash->{TOPIC} = $topic;
         $hash->{MODULE_VERSION} = "0.4";
+        $hash->{READY} = 0;
 
         if (defined($fullTopic) && $fullTopic ne "") {
             $fullTopic =~ s/%topic%/$topic/;
@@ -120,18 +123,7 @@ sub Define() {
             $hash->{FULL_TOPIC} = "%prefix%/" . $topic . "/";
         }
 
-        MQTT::Client_Define($hash, $def);
-
-        # Subscribe Readings
-        foreach (@topics) {
-            my $newTopic = TASMOTA::DEVICE::GetTopicFor($hash, $_);
-            my ($mqos, $mretain, $mtopic, $mvalue, $mcmd) = MQTT::parsePublishCmdStr($newTopic);
-            client_subscribe_topic($hash, $mtopic, $mqos, $mretain);
-
-            Log3($hash->{NAME}, 5, "automatically subscribed to topic: " . $newTopic);
-        }
-
-        return undef;
+        return MQTT::Client_Define($hash, $def);
     }
     else {
         return "Topic missing";
@@ -163,8 +155,8 @@ sub Undefine($$) {
 sub Set($$$@) {
     my ($hash, $name, $command, @values) = @_;
 
-    if ($command eq '?') {
-        return "Unknown argument " . $command . ", choose one of " . join(" ", map { "$_$sets{$_}" } sort keys %sets) . " " . join(" ", map {$hash->{sets}->{$_} eq "" ? $_ : "$_:" . $hash->{sets}->{$_}} sort keys %{$hash->{sets}});
+    if ($command eq '?' || $command =~ m/^(blink|intervals|(off-|on-)(for-timer|till)|toggle)/) {
+        return SetExtensions($hash, join(" ", map { "$_$sets{$_}" } keys %sets) . " " . join(" ", map {$hash->{sets}->{$_} eq "" ? $_ : "$_:".$hash->{sets}->{$_}} sort keys %{$hash->{sets}}), $name, $command, @values);
     }
 
     Log3($hash->{NAME}, 5, "set " . $command . " - value: " . join (" ", @values));
@@ -212,9 +204,33 @@ sub Set($$$@) {
         $hash->{message_ids}->{$msgid}++ if defined $msgid;
 
         Log3($hash->{NAME}, 5, "sent (cmnd) '0' to " . $statusTopic);
+
+        SetExtensionsCancel($hash);
     } else {
         return MQTT::DEVICE::Set($hash, $name, $command, @values);
     }
+}
+
+sub Attr($$$$) {
+    my ($command, $name, $attribute, $value) = @_;
+    my $hash = $defs{$name};
+
+    my $result = MQTT::DEVICE::Attr($command, $name, $attribute, $value);
+
+    if ($attribute eq "IODev") {
+        # Subscribe Readings
+        foreach (@topics) {
+            my $newTopic = TASMOTA::DEVICE::GetTopicFor($hash, $_);
+            my ($mqos, $mretain, $mtopic, $mvalue, $mcmd) = MQTT::parsePublishCmdStr($newTopic);
+            MQTT::client_subscribe_topic($hash, $mtopic, $mqos, $mretain);
+
+            Log3($hash->{NAME}, 5, "automatically subscribed to topic: " . $newTopic);
+        }
+
+        $hash->{READY} = 1;
+    }
+
+    return $result;
 }
 
 sub onmessage($$$) {
@@ -235,15 +251,15 @@ sub onmessage($$$) {
         Log3($hash->{NAME}, 5, "matched known type '" . $type . "' with command: " . $command);
 
         if ($type eq "stat" && $command eq "power") {
-            Log3($hash->{NAME}, 5, "updating state to: '" . lc($message) . "'");
+            Log3($hash->{NAME}, 4, "updating state to: '" . lc($message) . "'");
 
             readingsSingleUpdate($hash, "state", lc($message), 1);
         } elsif ($isJSON) {
-            Log3($hash->{NAME}, 5, "json in message detected: '" . $message . "'");
+            Log3($hash->{NAME}, 4, "json in message detected: '" . $message . "'");
 
             TASMOTA::DEVICE::Decode($hash, $command, $message);
         } else {
-            Log3($hash->{NAME}, 5, "fallback to plain reading: '" . $message . "'");
+            Log3($hash->{NAME}, 4, "fallback to plain reading: '" . $message . "'");
 
             readingsSingleUpdate($hash, $command, $message, 1);
         }
@@ -251,27 +267,6 @@ sub onmessage($$$) {
         # Forward to "normal" logic
         MQTT::DEVICE::onmessage($hash, $topic, $message);
     }
-}
-
-sub Decode($$$) {
-    my ($hash, $reading, $value) = @_;
-    my $h;
-
-    eval {
-        $h = decode_json($value);
-        1;
-    };
-
-    if ($@) {
-        Log3($hash->{NAME}, 2, "bad JSON: $reading: $value - $@");
-        return undef;
-    }
-
-    readingsBeginUpdate($hash);
-    TASMOTA::DEVICE::Expand($hash, $h, $reading . "-", "");
-    readingsEndUpdate($hash, 1);
-
-    return undef;
 }
 
 sub Expand($$$$) {
@@ -296,6 +291,27 @@ sub Expand($$$$) {
             }
         }
     }
+}
+
+sub Decode($$$) {
+    my ($hash, $reading, $value) = @_;
+    my $h;
+
+    eval {
+        $h = decode_json($value);
+        1;
+    };
+
+    if ($@) {
+        Log3($hash->{NAME}, 2, "bad JSON: $reading: $value - $@");
+        return undef;
+    }
+
+    readingsBeginUpdate($hash);
+    TASMOTA::DEVICE::Expand($hash, $h, $reading . "-", "");
+    readingsEndUpdate($hash, 1);
+
+    return undef;
 }
 
 1;
