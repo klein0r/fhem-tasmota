@@ -112,7 +112,7 @@ sub Define() {
     if (defined($topic)) {
 
         $hash->{TOPIC} = $topic;
-        $hash->{MODULE_VERSION} = "0.4";
+        $hash->{MODULE_VERSION} = "0.5";
         $hash->{READY} = 0;
 
         if (defined($fullTopic) && $fullTopic ne "") {
@@ -123,7 +123,11 @@ sub Define() {
             $hash->{FULL_TOPIC} = "%prefix%/" . $topic . "/";
         }
 
-        return MQTT::Client_Define($hash, $def);
+        $hash->{TYPE} = 'MQTT_DEVICE';
+        my $ret = MQTT::Client_Define($hash, $def);
+        $hash->{TYPE} = $type;
+        
+        return $ret;
     }
     else {
         return "Topic missing";
