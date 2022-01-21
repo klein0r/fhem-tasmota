@@ -1,12 +1,14 @@
 # Tasmota FHEM Module
 
+**DEPRECATED - PLEASE USE MQTT2_DEVICE INSTEAD**
+
+----
+
 This module extends the default MQTT_Device of FHEM, to make the integration of [Tasmota](https://github.com/arendst/Sonoff-Tasmota/) devices (like Sonoff) much easier.
 
 - All topics will be subscribed automatically
 - JSON messages with multiple information are automatically splitted into separate readings
 - You can use set ... cmd syntax to configure your Tasmota device without any knowledge about the mqtt topics
-
-But: This module is still under development. Please report any issues.
 
 ## Installation
 
