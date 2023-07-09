@@ -116,6 +116,7 @@ sub Define() {
         $hash->{READY} = 0;
 
         if (defined($fullTopic) && $fullTopic ne "") {
+            $topic = quotemeta $topic; # escape regex metachars if present
             $fullTopic =~ s/%topic%/$topic/;
             $hash->{FULL_TOPIC} = $fullTopic;
         } else {
@@ -138,7 +139,10 @@ sub GetTopicFor($$) {
     my ($hash, $prefix) = @_;
 
     my $tempTopic = $hash->{FULL_TOPIC};
-    $tempTopic =~ s/%prefix%/$prefix/;
+    my ($prefixSplit, $topic) = (split /\//, $prefix, 2)[0, 1]; # split prefix and topic
+    $prefixSplit = quotemeta $prefixSplit; # escape regex metachars if present
+    $tempTopic =~ s/%prefix%/$prefixSplit/;
+    $tempTopic .= $topic;
 
     return $tempTopic;
 }
