@@ -117,6 +117,7 @@ sub Define() {
 
         if (defined($fullTopic) && $fullTopic ne "") {
             $fullTopic =~ s/%topic%/$topic/;
+            $fullTopic =~ s#/*$#/#; # make sure there is exactly one slash at the end
             $hash->{FULL_TOPIC} = $fullTopic;
         } else {
             # Default Sonoff/Tasmota topic
@@ -135,12 +136,13 @@ sub Define() {
 };
 
 sub GetTopicFor($$) {
-    my ($hash, $prefix) = @_;
+    my ($hash, $command) = @_;
+    my ($prefix, $cmnd) = split(m#/#, $command);
 
     my $tempTopic = $hash->{FULL_TOPIC};
     $tempTopic =~ s/%prefix%/$prefix/;
 
-    return $tempTopic;
+    return $tempTopic.$cmnd;
 }
 
 sub Undefine($$) {
@@ -179,7 +181,7 @@ sub Set($$$@) {
 
             Log3($hash->{NAME}, 5, "sent (cmnd) '" . $value . "' to " . $topic);
         } elsif ($command =~ m/^(on|off|toggle)$/s) {
-            my $topic = TASMOTA::DEVICE::GetTopicFor($hash, "cmnd/Power");
+            my $topic = TASMOTA::DEVICE::GetTopicFor($hash, "cmnd/POWER");
             my $value = $1;
 
             $msgid = send_publish($hash->{IODev}, topic => $topic, message => $value, qos => $qos, retain => $retain);
@@ -203,7 +205,7 @@ sub Set($$$@) {
 
         # Refresh Status
 
-        my $statusTopic = TASMOTA::DEVICE::GetTopicFor($hash, "cmnd/Status");
+        my $statusTopic = TASMOTA::DEVICE::GetTopicFor($hash, "cmnd/STATUS");
         $msgid = send_publish($hash->{IODev}, topic => $statusTopic, message => "0", qos => $qos, retain => $retain);
         $hash->{message_ids}->{$msgid}++ if defined $msgid;
 
@@ -242,7 +244,9 @@ sub onmessage($$$) {
 
     Log3($hash->{NAME}, 5, "received message '" . $message . "' for topic: " . $topic);
 
-    if ($topic =~ qr/.*\/?(stat|tele)\/([a-zA-Z1-9]+).*/ip) {
+    my $regex = $hash->{FULL_TOPIC} . "(\\\w+).*";
+    $regex =~ s/%prefix%/(stat|tele)/;
+    if ($topic =~ qr/$regex/ip) {
         my $type = lc($1);
         my $command = lc($2);
         my $isJSON = 1;
